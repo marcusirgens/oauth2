@@ -27,17 +27,13 @@ import (
 // Deprecated: Use context.Background() or context.TODO() instead.
 var NoContext = context.TODO()
 
-// RegisterBrokenAuthHeaderProvider registers an OAuth2 server
-// identified by the tokenURL prefix as an OAuth2 implementation
-// which doesn't support the HTTP Basic authentication
-// scheme to authenticate with the authorization server.
-// Once a server is registered, credentials (client_id and client_secret)
-// will be passed as query parameters rather than being present
-// in the Authorization header.
-// See https://code.google.com/p/goauth2/issues/detail?id=31 for background.
-func RegisterBrokenAuthHeaderProvider(tokenURL string) {
-	internal.RegisterBrokenAuthHeaderProvider(tokenURL)
-}
+// RegisterBrokenAuthHeaderProvider previously did something. It is now a no-op.
+//
+// Deprecated: this function no longer does anything. Caller code that
+// wants to avoid potential extra HTTP requests made during
+// auto-probing of the provider's auth style should set
+// Endpoint.AuthStyle.
+func RegisterBrokenAuthHeaderProvider(tokenURL string) {}
 
 // Config describes a typical 3-legged OAuth2 flow, with both the
 // client application information and the server's endpoint URLs.
@@ -72,13 +68,38 @@ type TokenSource interface {
 	Token() (*Token, error)
 }
 
-// Endpoint contains the OAuth 2.0 provider's authorization and token
+// Endpoint represents an OAuth 2.0 provider's authorization and token
 // endpoint URLs.
 type Endpoint struct {
 	AuthURL       string
 	DeviceAuthURL string
 	TokenURL      string
+
+	// AuthStyle optionally specifies how the endpoint wants the
+	// client ID & client secret sent. The zero value means to
+	// auto-detect.
+	AuthStyle AuthStyle
 }
+
+// AuthStyle represents how requests for tokens are authenticated
+// to the server.
+type AuthStyle int
+
+const (
+	// AuthStyleAutoDetect means to auto-detect which authentication
+	// style the provider wants by trying both ways and caching
+	// the successful way for the future.
+	AuthStyleAutoDetect AuthStyle = 0
+
+	// AuthStyleInParams sends the "client_id" and "client_secret"
+	// in the POST body as application/x-www-form-urlencoded parameters.
+	AuthStyleInParams AuthStyle = 1
+
+	// AuthStyleInHeader sends the client_id and client_password
+	// using HTTP Basic Authorization. This is an optional style
+	// described in the OAuth2 RFC 6749 section 2.3.1.
+	AuthStyleInHeader AuthStyle = 2
+)
 
 var (
 	// AccessTypeOnline and AccessTypeOffline are options passed
@@ -98,7 +119,7 @@ var (
 	// ApprovalForce forces the users to view the consent dialog
 	// and confirm the permissions request at the URL returned
 	// from AuthCodeURL, even if they've already done so.
-	ApprovalForce AuthCodeOption = SetAuthURLParam("approval_prompt", "force")
+	ApprovalForce AuthCodeOption = SetAuthURLParam("prompt", "consent")
 )
 
 // An AuthCodeOption is passed to Config.AuthCodeURL.
@@ -126,7 +147,7 @@ func SetAuthURLParam(key, value string) AuthCodeOption {
 //
 // Opts may include AccessTypeOnline or AccessTypeOffline, as well
 // as ApprovalForce.
-// It can also be used to pass the PKCE challange.
+// It can also be used to pass the PKCE challenge.
 // See https://www.oauth.com/oauth2-servers/pkce/ for more info.
 func (c *Config) AuthCodeURL(state string, opts ...AuthCodeOption) string {
 	var buf bytes.Buffer
@@ -223,7 +244,7 @@ func (c *Config) AuthDevice(ctx context.Context, opts ...AuthCodeOption) (*Devic
 // Poll does a polling to exchange an device code for a token.
 func (c *Config) Poll(ctx context.Context, da *DeviceAuth, opts ...AuthCodeOption) (*Token, error) {
 	v := url.Values{
-		"client_id": {c.ClientID},
+		"client_id":   {c.ClientID},
 		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
 		"device_code": {da.DeviceCode},
 		"code":        {da.DeviceCode},
